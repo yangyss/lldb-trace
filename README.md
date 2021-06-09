@@ -6,21 +6,21 @@ just a python-script for lldb.
 
 >1. Break at an address where you want to begin tracing.
 >
->   ![](/Users/wt/Desktop/111.png)
+>   ![](https://github.com/yangyss/lldb-trace/blob/main/111.png)
 >
 >2. Import  lldb python script.
 >
->   ![](/Users/wt/Desktop/222.png)
+>   ![](https://github.com/yangyss/lldb-trace/blob/main/222.png)
 >
 >3. Set an address where you want to end tracing.
 >
->   ![](/Users/wt/Desktop/333.png)
+>   ![](https://github.com/yangyss/lldb-trace/blob/main/333.png)
 >
 >4. Use  'trace' command,and  redirect log to file.
 >
->   ![](/Users/wt/Desktop/444.png)
+>   ![](https://github.com/yangyss/lldb-trace/blob/main/444.png)
 >
->   ![](/Users/wt/Desktop/555.png)
+>   ![](https://github.com/yangyss/lldb-trace/blob/main/555.png)
 
 ```python
 trace -e 0x111111 -l all -t ~/tracelog.txt -d ~/debuglog.txt
