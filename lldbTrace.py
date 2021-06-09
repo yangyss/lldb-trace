@@ -1,4 +1,9 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
+# -*- encoding: utf-8 -*-
+#@File    :   lldbTrace.py
+#@Time    :   2021/06/09 19:23:40
+#@Author  :   wt 
+
 import lldb
 import optparse
 import shlex
