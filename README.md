@@ -1,5 +1,6 @@
 # lldb-trace
-Tracing ins in arm64
+Tracing instruction in lldb debugger.
+just a python-script for lldb.
 
 
 ### How to use it?
