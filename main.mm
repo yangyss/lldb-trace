@@ -1,0 +1,156 @@
+//
+//  main.m
+//  checkDemo
+//
+//  Created by wt on 2021/4/21.
+//
+
+#import <Foundation/Foundation.h>
+#import <CommonCrypto/CommonCrypto.h>
+#import <CommonCrypto/CommonCryptor.h>
+#import <CoreLocation/CoreLocation.h>
+#include <sys/stat.h>
+#import <objc/runtime.h>
+#import <Foundation/NSObject.h>
+#import "WTAes.hpp"
+
+int test(int a,int b,int c){
+    int  tmp = 2 * c;
+    return  a + b + tmp;
+}
+
+int test_fun(){
+    NSString * a = @"{\"b1\":\"\",\"b2\":1,\"b3\":\"AAAAAAAAAAAAAMnu601KCPF0Mj3cObiE77iT8YWCbhK1vSgWHJ3uNlYTdmODBjMGMyZGMn-JGVHeeVP_WmIdd2TFi6Si0TpSJ8_Q\",\"b4\":\"\",\"b5\":1,\"b6\":{\"c1\":\"com.meituan.imeituan\",\"c2\":\"56226DD0E7DEB85C417DD793041E5CC9\",\"c3\":\"11.7.202\",\"c4\":117202,\"c5\":-2}}";
+    NSLog(@"%ld",[a length]);
+    unsigned char arr[] = {
+        0xc2,0x55,0xe9,0x74,0xb0,0xd6,0x39,0xb2,
+        0xf3,0x0e,0x85,0x98,0x6b,0xd0,0xb8,0xc9,
+        0x35,0x50,0x56,0xe0,0xef,0xe7,0x1d,0x2c,
+        0x5a,0x0e,0x76,0x76,0xd8,0x6f,0xda,0xee,
+        0xf5,0xfe,0x78,0x0f,0x08,0x3d,0x47,0xe2,
+        0x51,0xf3,0xc1,0x75,0xf5,0xf1,0x40,0x10,
+        0x74,0xd6,0x62,0x5e,0xe7,0x51,0xce,0xd7,
+        0x8b,0x4d,0x66,0x95,0x34,0x33,0xda,0x3b,
+        0x0f,0xe7,0x55,0x27,0x5b,0xe8,0x11,0x2c,
+        0xcd,0xc5,0xfa,0x76,0x97,0x8c,0x4c,0xcc,
+        0x33,0x1e,0xe5,0xf2,0x5e,0xba,0xca,0xae,
+        0x6c,0x32,0x21,0x18,0x1e,0x5e,0x32,0x69,
+        0x00,0x3c,0xfa,0x14,0xea,0x62,0xed,0x81,
+        0x59,0xad,0x70,0x7b,0x56,0xa7,0x1d,0x40,
+        0x44,0x23,0x69,0x3e,0xda,0x14,0xb8,0x42,
+        0x67,0x9f,0xc7,0x07,0xe4,0x92,0xd3,0xff,
+        0x5b,0x6d,0x0d,0xd6,0x3c,0x0d,0xcb,0x33,
+        0x95,0x4f,0x8c,0xbe,0xd1,0xbf,0x87,0x8e,
+        0x24,0x03,0x8b,0xc4,0xfa,0xfd,0x25,0x7d,
+        0xe9,0x40,0xda,0xe8,0xc0,0xf4,0xd5,0x12,
+        0x6f,0xf0,0x3d,0x3e,0xca,0x96,0x63,0x72,
+        0x9d,0x2c,0x72,0xbb,0xef,0x73,0xac,0xaa,
+        0xfd,0xd1,0x4c,0x2d,0x38,0x9c,0xd2,0x19,
+        0x54,0x43,0x1b,0xd5,0x9d,0xa5,0x15,0x7d,
+        0xf2,0x27,0x7a,0x1d,0xee,0x91,0xfc,0xf2,
+        0xca,0x9b,0xee,0x14,0x5c,0xe5,0x6d,0x5c,
+        0x31,0xe6,0x47,0x45,0xf2,0x68,0xb8,0x32,
+        0x85,0x08,0x68,0x4e,0x57,0x80,0x82,0xc9,
+        0x8f,0xe2,0x7c,0xff,0x79,0xd6,0xc7,0xba,
+        0x68,0xf7,0x9a,0x13,0xbf,0x99,0x01,0xe8,
+        0x98,0x7a,0xd6,0xab,0xb8,0xae,0x0c,0x3f,
+        0xe7,0xb0};
+    
+    NSData * data = [[NSData alloc] initWithBytes:arr length:0xfd];
+    NSData *base64Data = [data base64EncodedDataWithOptions:0];
+    
+    NSString *base64 = [[NSString alloc] initWithData:base64Data encoding:NSUTF8StringEncoding];
+    NSLog(@"%@",base64);
+    
+    int value = test(2, 3, 5);
+    NSString * str = [NSString stringWithFormat:@"%d",value];
+    [str stringByAppendingString:@"abc"];
+    
+//    @"wlXpdLDWObLzDoWYa9C4yTVQVuDv5x0sWg52dthv2u71/ngPCD1H4lHzwXX18UAQdNZiXudRzteLTWaVNDPaOw/nVSdb6BEszcX6dpeMTMwzHuXyXrrKrmwyIRgeXjJpADz6FOpi7YFZrXB7VqcdQEQjaT7aFLhCZ5/HB+SS0/9bbQ3WPA3LM5VPjL7Rv4eOJAOLxPr9JX3pQNrowPTVEm/wPT7KlmNynSxyu+9zrKr90UwtOJzSGVRDG9WdpRV98id6He6R/PLKm+4UXOVtXDHmR0XyaLgyhQhoTleAgsmP4nz/edbHumj3mhO/mQHomHrWq7iuDD/nsA==";
+//    @"wlXpdLDWObLzDoWYa9C4yTVQVuDv5x0sWg52dthv2u71/ngPCD1H4lHzwXX18UAQdNZiXudRzteLTWaVNDPaOw/nVSdb6BEszcX6dpeMTMwzHuXyXrrKrmwyIRgeXjJpADz6FOpi7YFZrXB7VqcdQEQjaT7aFLhCZ5/HB+SS0/9bbQ3WPA3LM5VPjL7Rv4eOJAOLxPr9JX3pQNrowPTVEm/wPT7KlmNynSxyu+9zrKr90UwtOJzSGVRDG9WdpRV98id6He6R/PLKm+4UXOVtXDHmR0XyaLgyhQhoTleAgsmP4nz/edbHumj3mhO/mQHomHrWq7iuDD/nsCgAMA==";
+    
+//    wlXpdLDWObLzDoWYa9C4yTVQVuDv5x0sWg52dthv2u71/ngPCD1H4lHzwXX18UAQdNZiXudRzteLTWaVNDPaOw/nVSdb6BEszcX6dpeMTMwzHuXyXrrKrmwyIRgeXjJpADz6FOpi7YFZrXB7VqcdQEQjaT7aFLhCZ5/HB+SS0/9bbQ3WPA3LM5VPjL7Rv4eOJAOLxPr9JX3pQNrowPTVEm/wPT7KlmNynSxyu+9zrKr90UwtOJzSGVRDG9WdpRV98id6He6R/PLKm+4UXOVtXDHmR0XyaLgyhQhoTleAgsmP4nz/edbHumj3mhO/mQHomHrWq7iuDD/nsA==
+    
+//    struct stat a;
+//    const char * path = '/Users/wt/pro';
+//    stat(path, &a);
+//    int abc = sizeof(a);
+//
+//    CLAuthorizationStatus status = [CLLocationManager authorizationStatus];
+//    NSLog(@"%f",[[NSDate date]timeIntervalSince1970]);
+//
+//
+//    [NSKeyedUnarchiver unarchiveObjectWithData:nil];
+//
+//    CCCrypt(kCCDecrypt, kCCAlgorithmAES128, kCCOptionPKCS7Padding|kCCOptionECBMode,)
+    return  0;
+}
+
+void test_aes(){
+    AES aes;
+    byte enc[16];
+    byte buf[16]="this is a test";
+    byte ret[16];
+    aes.encrypt(buf,enc);
+    aes.decrypt(enc,ret);
+    printf("%s",ret);
+}
+
+
+void test_folly()
+{
+    
+}
+
+void b(void)
+{
+    usleep(200 * 1000);
+}
+
+void a(void)
+{
+    for(int i=0; i<3; i++)
+    {
+        b();
+    }
+    NSString * sour = @"abc";
+    NSString * str = [[NSString alloc] initWithString:sour];
+    printf("Cycle\n");
+    NSLog(@"%@",str);
+}
+
+void c(int i);
+void d(int i)
+{
+    c(i-1);
+}
+
+void c(int i)
+{
+    if (i > 0) {
+        d(i);
+    }
+}
+
+void breakpoint(void)
+{
+    a();
+    c(1);
+}
+
+int test()
+{
+    while(true) {
+        breakpoint();
+    }
+    return 0;
+}
+
+
+int main(int argc, const char * argv[]) {
+    sleep(1);
+    test();
+//    test_fun();
+//    test_aes();
+    return 0;
+}

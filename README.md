@@ -1,34 +1,24 @@
-# lldb-trace
-Tracing instruction in lldb debugger.
-just a python-script for lldb.
+# lldbTrace
 
 ##### How to use it?
 
->1. Break at an address where you want to begin tracing.
+> 1.*Break at an address where you want to begin tracing.*
 >
->   ![](https://github.com/yangyss/lldb-trace/blob/main/111.png)
+> ![](https://github.com/yangyss/lldb-trace/blob/main/source/1111.png)
 >
->2. Import  lldb python script.
+> 2, *Import lldb python script.*
 >
->   ![](https://github.com/yangyss/lldb-trace/blob/main/222.png)
+> ![](https://github.com/yangyss/lldb-trace/blob/main/source/2222.png)
 >
->3. Set an address where you want to end tracing.
+> 3,*Use 'trace' command,and set end tracing addresses.Multi-address split by ";".*
 >
->   ![](https://github.com/yangyss/lldb-trace/blob/main/333.png)
+> ![](https://github.com/yangyss/lldb-trace/blob/main/source/3333.png)
 >
->4. Use  'trace' command,and  redirect log to file.
+> 4,*Result  like  ...*
 >
->   ![](https://github.com/yangyss/lldb-trace/blob/main/444.png)
->
->   ![](https://github.com/yangyss/lldb-trace/blob/main/555.png)
-
-```python
-trace -e 0x111111 -l all -t ~/tracelog.txt -d ~/debuglog.txt
-```
-
-> 参考：https://github.com/gm281/lldb-trace
+> ![](https://github.com/yangyss/lldb-trace/blob/main/source/4444.png)
 
 
 
-
+> *参考：https://github.com/gm281/lldb-trace*
 
