@@ -12,6 +12,8 @@ import threading
 import ctypes
 import os
 
+
+
 log_default_path = '~/Desktop/' # 默认路径 , 
 
 options = None
@@ -46,6 +48,9 @@ def log_flush():
         d_log_file.flush()
     if t_log_file is not None:
         t_log_file.flush()
+
+def dlog(msg):
+    print("xxxxxxxxx-> {}".format(msg))
 
 # 调试类型
 TRACE_TYPE_Instrument = 0,
@@ -304,7 +309,7 @@ class WTInstruction():
             self.current_instruction_end_address_list = []
             
         # endaddress 加入到 end tracing 地址列表中
-        cur_end_address = symbol.GetEndAddress().GetLoadAddress(self.target)
+        cur_end_address = symbol.GetEndAddress().GetLoadAddress(self.target) - 4
         self.end_trace_address.append(cur_end_address)   
         
         # 把 返回指令的 地址 加入到 end tracing 地址列表中
@@ -332,10 +337,9 @@ class WTInstruction():
         if not self.current_instruction_list or (address and (not (address in self.current_instruction_list))) :
             frame :lldb.SBFrame = self.thread.GetSelectedFrame()
             symbol:lldb.SBSymbol = frame.GetSymbol()
-
             ################## 给 current_instruction_end_address_list 赋值
             # 获得 当前 symbol 下的 endAddress
-            cur_end_address = symbol.GetEndAddress().GetLoadAddress(self.target)
+            cur_end_address = symbol.GetEndAddress().GetLoadAddress(self.target) - 4
             log_d('cur symbol end addr : {}'.format(hex(cur_end_address)))
             self.current_instruction_end_address_list = []
             # 把 结束地址，加入到 current_instruction_end_address_list 中
@@ -357,6 +361,7 @@ class WTInstruction():
                 cur_mnemonic:str = instruction.GetMnemonic(self.target)
                 load_address = address.GetLoadAddress(self.target)
                 self.current_instruction_list[load_address] = instruction  
+
             return False
         return True
 
@@ -399,7 +404,7 @@ class WTInstruction():
             self.next_instruction = None
 
     def print_tracing_progress(self,count):
-        # 内存地址:文件地址: 函数名    当前trace的总行数
+        # 当前trace的总行数 内存地址:文件地址: <函数名>
         global ASLR
         mem_addr = 0
         file_addr = 0
@@ -450,32 +455,32 @@ class WTInstruction():
             return True
 
         if cur_symbol_name in CONST_DEVICE_info_list[DEVICE][CONST_FUNC_NAME_protect_list]:
-            # 设置 附加信息 
+            # # 设置 附加信息 
             
-            # log_t('{}<< current frame name >> :  {}'.format(aligens,cur_symbol_name))
-            frame :lldb.SBFrame = self.thread.GetSelectedFrame()
+            # # log_t('{}<< current frame name >> :  {}'.format(aligens,cur_symbol_name))
+            # frame :lldb.SBFrame = self.thread.GetSelectedFrame()
             
-            for pro_key,pro_value in CONST_DEVICE_info_list[DEVICE][CONST_FUNC_NAME_protect_list].items():
+            # for pro_key,pro_value in CONST_DEVICE_info_list[DEVICE][CONST_FUNC_NAME_protect_list].items():
                 
-                if pro_key == cur_symbol_name:
+            #     if pro_key == cur_symbol_name:
 
-                    objs = pro_value[CONST_PRINT_obj]
-                    char_stars = pro_value[CONST_PRINT_char_star]
+            #         objs = pro_value[CONST_PRINT_obj]
+            #         char_stars = pro_value[CONST_PRINT_char_star]
                     
-                    for char_star_item in char_stars: 
-                        func_name_register:lldb.SBValue = frame.FindRegister(char_star_item)
-                        addr = int(func_name_register.GetValue(),16)
-                        self.append_msg = ' : {}{: <3} ==> {} '.format(self.append_msg,char_star_item,get_c_char_star(addr))
-                        log_d('===>>>char_star_item : {}  append_msg : {}'.format(char_star_item,self.append_msg))
+            #         for char_star_item in char_stars: 
+            #             func_name_register:lldb.SBValue = frame.FindRegister(char_star_item)
+            #             addr = int(func_name_register.GetValue(),16)
+            #             self.append_msg = ' : {}{: <3} ==> {} '.format(self.append_msg,char_star_item,get_c_char_star(addr))
                     
-                    for obj_item in objs:
-                        item_value =  handle_command(obj_item,self.debugger)
-                        self.append_msg = '{}{: <3} ==> {} '.format(self.append_msg,obj_item,item_value)
-                        log_d('===>>>obj_item : {}  append_msg : {}'.format(obj_item,self.append_msg))
-                    break
+            #         for obj_item in objs:
+            #             item_value =  handle_command(obj_item,self.debugger)
+            #             self.append_msg = '{}{: <3} ==> {} '.format(self.append_msg,obj_item,item_value)
 
-            log_d('cur_symbol_name in protect_function_names')
-            return True
+            #         break
+
+            # log_d('cur_symbol_name in protect_function_names')
+            # return True
+            pass
 
         return False
 
@@ -670,6 +675,8 @@ class WTInstruction():
         if pc in self.end_trace_address:
             self.delete_current_breakpoint()
             self.log_current_instruction(pc)
+            log_d('end trace addr list : {}'.format(self.end_trace_address))
+            log_d('cur pc : {}'.format(pc))
             return True
         return False
 
@@ -710,7 +717,7 @@ class WTInstruction():
             if not sym.IsValid():
                 log_d('####### return : check_symbol_valid not valid. value : CONST_DEAL_WITH_wait_breakpoint')
                 return False,CONST_DEAL_WITH_wait_breakpoint
-        log_d('@@@@ check_symbol_valid valid.')
+        log_d('@@@@ check_symbol_valid : valid.')
         return True,None
 
     def check_in_module(self):
@@ -760,18 +767,20 @@ class WTInstruction():
             log_c('warning : instruction is None')
 
         cur_frame:lldb.SBFrame = self.thread.GetFrameAtIndex(0)
-        cur_symbol:lldb.SBSymbol = cur_frame.GetSymbol()
-            
+        cur_symbol:lldb.SBSymbol = cur_frame.GetSymbol()  
         flag,value = self.check_ins_call(mnemonic,cur_symbol) # call 指令 操作
         if flag:
+            log_d('check_ins_call')
             return value
             
         flag,value = self.check_ins_jmp(mnemonic,cur_symbol) # jmp 指令 操作
         if flag:
+            log_d('check_ins_jmp')
             return value
 
         flag,value = self.check_ins_syscall(mnemonic,cur_symbol)  # syscall 指令 操作
         if flag :
+            log_d('check_ins_syscall')
             return value
 
         self.check_ins_other(cur_symbol)  # 其他指令的操作
@@ -983,7 +992,9 @@ def trace(debugger: lldb.SBDebugger, command: str, result: lldb.SBCommandReturnO
     insObj.init_env()
     global num_for_print_progress
     insCount = 0
+    test_index = 0
     while True:
+        log_d('index : {}'.format(test_index))
         # 打印进度
         if options.print_tracing_progress :
             if insCount % num_for_print_progress == 0 and insCount > 0:
@@ -993,12 +1004,14 @@ def trace(debugger: lldb.SBDebugger, command: str, result: lldb.SBCommandReturnO
         # 更新当前 instruction / instructionList
         log_d("////////////////////////////////loop begin////////////////////////////////")
         insObj.updata_instruction_instructionList() # 更新所有的 指令 ，更新当前 指令 
+
         # ins : 设置断点，进行有必要的 单步 调试
         # fun : 设置断点
         ret = insObj.deal_with() # 处理 指令
+
         # 保存指令
         insObj.updata_last_instruction()
-        
+
         log_d("=================== Stopped at: ====================")
         log_d("Frame: {}, symbol: {}, pc: {pc:#x}".format(str(frame), str(frame.GetSymbol()), pc=frame.GetPC()))
         # 判断结果
@@ -1013,8 +1026,8 @@ def trace(debugger: lldb.SBDebugger, command: str, result: lldb.SBCommandReturnO
 
         if ret == CONST_DEAL_WITH_break :
             break
-
         continue_and_wait_for_breakpoint(process,thread,my_thread,wait_event,notify_event)
+
 
 
     if options.suspend_threads :
@@ -1040,6 +1053,7 @@ def init_ASLR(debugger:lldb.SBDebugger):
         print('ALSR : {}'.format(ASLRHexStr))
         return ASLRHexStr
     else:
+        ASLR = ''
         print('err : ALSR is None')
         return None
 
