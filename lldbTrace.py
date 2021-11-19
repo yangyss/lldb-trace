@@ -11,7 +11,7 @@ import optparse
 import threading
 import ctypes
 import os
-
+ 
 
 
 log_default_path = '~/Desktop/' # 默认路径 , 
@@ -64,6 +64,7 @@ DEVICE_x8632 = 'x86-32'
 # 调试中需要处理的 汇编指令信息
 CONST_INS_call = 'call',
 CONST_INS_jmp = 'jmp',
+CONST_INS_condition_jmp = 'condition_jmp',
 CONST_INS_syscall = 'syscall',
 CONST_INS_end = 'func_end_mnemonic'
 CONST_FUNC_NAME_ignore_list = 'ignore_func_name_list'
@@ -105,6 +106,7 @@ CONST_DEVICE_info_list = {
 
         CONST_INS_call : ['bl'],#,'bl',
         CONST_INS_jmp  : ['cb','b','tb'],#'b',
+        CONST_INS_condition_jmp : ['b'],
         CONST_INS_syscall : ['svc'],#'svc'
         CONST_INS_end : ['ret']
     },
@@ -470,7 +472,7 @@ class WTInstruction():
             #         for char_star_item in char_stars: 
             #             func_name_register:lldb.SBValue = frame.FindRegister(char_star_item)
             #             addr = int(func_name_register.GetValue(),16)
-            #             self.append_msg = ' : {}{: <3} ==> {} '.format(self.append_msg,char_star_item,get_c_char_star(addr))
+                        # self.append_msg = ' : {}{: <3} ==> {} '.format(self.append_msg,char_star_item,get_c_char_star(addr))
                     
             #         for obj_item in objs:
             #             item_value =  handle_command(obj_item,self.debugger)
@@ -787,8 +789,17 @@ class WTInstruction():
         log_d('####### return : check_ins_other. value : CONST_DEAL_WITH_wait_breakpoint')
         return CONST_DEAL_WITH_wait_breakpoint
         
+    
+
+       
+
+
+class WTFunction():
+    def __init__(self, *args):
+        pass
     def deal_with_fun(self):
         pass
+        
 
 class TraceOptionParser(optparse.OptionParser):
     def __init__(self, result):
@@ -1040,6 +1051,630 @@ def trace(debugger: lldb.SBDebugger, command: str, result: lldb.SBCommandReturnO
     log_flush()
 
 
+############################################################################################################################################################
+#######################################################################traceblock###########################################################################
+############################################################################################################################################################
+
+class WTBlock():
+    def __init__(self, target, thread, frame,debugger,endAddress=None):
+        self.target:lldb.SBTarget = target
+        self.thread:lldb.SBThread = thread
+        self.frame:lldb.SBFrame = frame
+        self.debugger:lldb.SBDebugger = debugger
+
+        self.current_instruction_list = {}
+        self.end_trace_address = []
+        self.block_list = {} # 存贮所有的 block
+
+        # 
+        # {
+        #     addr : {  # 这里是断点地址
+        #         'index' : 0 # 这里是断点信息
+        #         'breakpoint' : None # 这里是 lldb.SBBreakpoint
+        #     }
+        # }
+        self.breakpoint_list = {} # 断点列表
+        
+        self.loop_flag = False
+        self.append_msg = ''  
+
+        # log
+        self.last_block_msg = '' 
+        self.last_isnts_msg = ''
+        self.last_reg_msg = ''
+
+        ## 
+        self.test_test_index = 0
+
+        for item in re.split(';',endAddress):
+            self.end_trace_address.append(int(item,16)) # 结束 Trace 地址
+
+    def initEnv(self):
+        cur_pc = self.get_current_pc()
+        self.block_add_block_to_block_list(cur_pc)
+        for item in self.end_trace_address :
+            self.block_add_breakpoint(item)  # 给结束地址下断点
+
+    def block_set_loop_flag(self,flag_value):
+        self.loop_flag = flag_value
+
+    def block_add_append_msg(self,msg):
+        self.append_msg = '{}[{}]'.format(self.append_msg,msg)            
+        
+
+    def block_clear_append_msg(self):
+        self.append_msg = ''
+
+    def block_delete_breakpoint(self,inst_addr):
+        if inst_addr in self.breakpoint_list :
+            index_value = self.breakpoint_list[inst_addr]['index']
+            delete_breakpoint:lldb.SBBreakpoint = self.breakpoint_list[inst_addr]['breakpoint']
+            if index_value > 1 :
+                self.breakpoint_list[inst_addr]['index'] = index_value -1
+            elif index_value == 1:
+                log_d('delete breakpoint at : {}'.format(hex(inst_addr)))
+                self.target.BreakpointDelete(delete_breakpoint.GetID())
+                self.breakpoint_list[inst_addr]['index'] = 0
+                self.breakpoint_list.pop(inst_addr)
+            else:
+                log_d('err : delete breakpoint with wrong index . < index : {} >'.format(index_value))
+
+    def block_add_breakpoint(self,inst_addr):
+        if inst_addr in self.breakpoint_list:
+            # index_value = self.breakpoint_list[inst_addr]['index']
+            # if index_value > 0 :
+            #     print('increase breakpoint index at : {}'.format(hex(inst_addr)))
+            #     self.breakpoint_list[inst_addr]['index'] = index_value + 1
+            # else:
+            #     print('err : add breakpoint with wrong index. < index : {} >'.format(index_value))
+            log_d('breakpoint at {} had been exist.'.format(hex(inst_addr)))
+        else:
+            item = {}
+            breakpoint :lldb.SBBreakpoint = self.target.BreakpointCreateByAddress(inst_addr)
+            breakpoint.SetThreadID(self.thread.GetThreadID())
+            item['index'] = 1
+            item['breakpoint'] = breakpoint
+            self.breakpoint_list[inst_addr] = item
+            log_d('add breakpoint at : {}'.format(hex(inst_addr)))
+    def block_add_block_to_block_list(self,block_id):
+        if  not (block_id in self.block_list) :
+            log_d('>>>>>> add block : {}  >>> value : None.'.format(hex(block_id)))
+            self.block_list[block_id] = None
+
+    # 获得当前 pc
+    def get_current_pc(self):
+        now_frame :lldb.SBFrame = self.thread.GetSelectedFrame()
+        if now_frame:
+            return now_frame.GetPC()
+        return None
+    # 
+    def block_update_current_ins(self):
+        frame : lldb.SBFrame = self.thread.GetSelectedFrame()
+        # symbol:lldb.SBSymbol = frame.GetSymbol()
+        # # 给 current_instruction_list 赋值
+        # # 获得 当前 symbol 下的 instructionlist
+        # insts : lldb.SBInstructionList = symbol.GetInstructions(self.target)
+
+        cur_pc = self.get_current_pc()
+        
+        if not (cur_pc in self.current_instruction_list)  :
+            # 清空一哈
+            self.current_instruction_list = {}
+            # 更新 self.current_instruction_list
+
+            target: lldb.SBTarget = self.debugger.GetSelectedTarget()
+            process: lldb.SBProcess = target.GetProcess()
+            thread: lldb.SBThread = process.GetSelectedThread()
+            frame: lldb.SBFrame = thread.GetSelectedFrame()
+            symbol :lldb.SBSymbol = frame.GetSymbol()
+            insts :lldb.SBInstructionList = symbol.GetInstructions(target)
+            # func : lldb.SBFunction = frame.GetFunction()
+            # insts : lldb.SBInstructionList = func.GetInstructions(self.target)     
+            for inst in insts :
+                instAddr :lldb.SBAddress = inst.GetAddress()
+                addr = instAddr.GetLoadAddress(self.target)
+                if not (addr in self.current_instruction_list) :
+                    self.current_instruction_list[addr] = inst
+        
+        return cur_pc
+
+
+    # 判断当前 ins 是否在 trace 的结束列表中
+    def block_check_current_ins_in_end_tracing_address_list(self,curIns):
+        if curIns in self.end_trace_address :
+            return True
+        return False
+    
+    def block_update_block_data(self,block_id,block_dic):
+        if block_id in self.block_list:
+            block_data = self.block_list[block_id]
+            if not block_data :
+                self.block_list[block_id] = block_dic
+            else :
+                log_d('>> block : {} had been update'.format(hex(block_id)))
+        else:
+            log_d('err : block id dont input to block list.')
+
+    def block_update_current_block(self):        
+        # 需要在 bl 以及 jmp 目标地址，和条件jmp的下一条指令处下断点，以及 增加对应的 block 到 blockList 中
+        cur_pc = self.get_current_pc()
+        # print(self.current_instruction_list)
+        inst :lldb.SBInstruction = self.current_instruction_list[cur_pc]
+
+        if (cur_pc in self.block_list) and ( self.block_list[cur_pc]) :  
+            self.block_set_loop_flag(True)
+            self.block_delete_breakpoint(cur_pc)
+            return self.block_list[cur_pc]
+
+        use_inst = inst
+        block_ins_list = {}
+        need_break = False
+        log_d('update block : {} insts :'.format(hex(cur_pc)))
+        while True :
+            mnemonic: str = use_inst.GetMnemonic(self.target)
+            inst_addr = use_inst.GetAddress().GetLoadAddress(self.target)
+            next_addr = inst_addr + use_inst.GetByteSize()
+            operands = use_inst.GetOperands(self.target)
+
+            flag = False
+            for item in CONST_DEVICE_info_list[DEVICE][CONST_INS_call] :
+                if mnemonic.startswith(item) :
+                    flag = True
+                    break
+            
+            if flag :
+                self.block_add_breakpoint(inst_addr)
+                block_ins_list[inst_addr] = use_inst # 代码加入到 block_ins_list 
+                if next_addr in self.current_instruction_list :
+                    use_inst = self.current_instruction_list[next_addr] # 更新 use_inst
+                else :
+                    break
+                continue
+
+            flag = False
+            for item in CONST_DEVICE_info_list[DEVICE][CONST_INS_jmp]:
+                if item == mnemonic :
+                    flag = True
+                    need_break = True
+                    break
+            
+            if flag :  
+                self.block_add_block_to_block_list(int(operands,16))    # 添加block 到 block_list 中 
+                self.block_add_breakpoint(int(operands,16))# 在 int(operands,16) 处下断点
+
+            if not need_break :        
+                flag = False
+                for item in CONST_DEVICE_info_list[DEVICE][CONST_INS_condition_jmp] :
+                    if  mnemonic.startswith(item):
+                        flag = True
+                        need_break = True
+                        break
+                if flag :
+                    if int(operands,16) > inst_addr :    
+                        self.block_add_block_to_block_list(int(operands,16)) 
+                        self.block_add_breakpoint(int(operands,16)) # 在 operands 下断点
+
+                    self.block_add_block_to_block_list(next_addr)
+                    self.block_add_breakpoint(next_addr) # 在 next_addr 下断点
+
+            
+            block_ins_list[inst_addr] = use_inst # 代码加入到 block_ins_list 
+            if need_break :
+                break
+
+            if next_addr in self.current_instruction_list :
+                use_inst = self.current_instruction_list[next_addr] # 更新 use_inst
+            else :
+                break
+        # self.block_list[cur_pc] = block_ins_list
+        # print('block : {} \n{}:'.format(hex(cur_pc),self.block_list[cur_pc]))
+        return block_ins_list
+
+
+    def block_at_bl(self,curIns):
+        ins:lldb.SBInstruction = self.current_instruction_list[curIns]
+        mnem:str = ins.GetMnemonic(self.target)
+        for item in CONST_DEVICE_info_list[DEVICE][CONST_INS_call]:
+            if mnem.startswith(item) :
+                return True
+        return False
+
+    def block_at_header(self,curIns):
+        if curIns in self.block_list :
+            return True
+        return False
+
+    ##############################
+    def block_step_into(self):
+        self.thread.StepInstruction(False)
+
+    def block_get_data_about_function_and_symbol(self,curIns):
+        target: lldb.SBTarget = self.debugger.GetSelectedTarget()
+        process: lldb.SBProcess = target.GetProcess()
+        thread: lldb.SBThread = process.GetSelectedThread()
+        frame: lldb.SBFrame = thread.GetSelectedFrame()
+        symbol :lldb.SBSymbol = frame.GetSymbol()
+        func : lldb.SBFunction = frame.GetFunction()
+        # insts:lldb.SBInstructionList = func.GetInstructions(target)
+        # inst:lldb.SBInstruction = None
+        # block_delete_breakpoint
+        self.block_delete_breakpoint(curIns)
+
+        if func.IsValid():
+            return True,symbol.GetName()
+
+        return False,symbol.GetName()
+
+
+    def block_get_reg_msg(self):
+        reg_msg = ''
+        target: lldb.SBTarget = self.debugger.GetSelectedTarget()
+        process: lldb.SBProcess = target.GetProcess()
+        thread: lldb.SBThread = process.GetSelectedThread()
+        frame: lldb.SBFrame = thread.GetSelectedFrame()
+
+        registerSet :lldb.SBValueList = frame.GetRegisters()
+        regs:lldb.SBValue = registerSet.GetValueAtIndex(0)
+        for reg in regs :     
+            if reg_msg == "" :
+                reg_msg = '{}:{}'.format(reg.name,reg.value)
+            else:
+                reg_msg = '{}|{}:{}'.format(reg_msg,reg.name,reg.value)
+
+            if reg.name == 'pc' :
+                break
+
+        return reg_msg
+
+    def block_get_current_insts_msg(self,block_id):
+        global ASLR
+        target: lldb.SBTarget = self.debugger.GetSelectedTarget()
+        isnts_msg = ''
+        if  not self.loop_flag :
+            # isnts_msg = '0x12345 mov x0,1'
+            if block_id in self.block_list:
+                cur_block = self.block_list[block_id]
+                inst:lldb.SBInstruction = None
+                if cur_block :
+                    for key,inst in cur_block.items():
+                        inst_msg = '{: <5} {}'.format(inst.GetMnemonic(target),inst.GetOperands(target))
+                        if isnts_msg == "" :
+                            isnts_msg = '{: <10}  {}'.format(hex(key - ASLR),inst_msg)
+                        else:
+                            isnts_msg = '{}\n\t{: <10}  {}'.format(isnts_msg,hex(key - ASLR),inst_msg)
+
+        return isnts_msg
+
+    ################################
+    # log 输出 格式
+    # block_id :
+	# {
+	#     addr : inst
+	# 	...
+	# }<函数名|函数名|..>[x0:value|x1:value|....]
+    # block_id :
+	#     {}<函数名|函数名|..>[x0:value|x1:value|....]
+    #
+    # out_msg = "%s\n{\n\t%s\n}<%s>[%s]" % ('block id : 0x1233333','0x12345 mov x0,1','malloc|strlen','x0:0x1234|x1:0x222222')
+    def block_log_msg(self,block_id):
+        global ASLR
+        self.test_test_index = self.test_test_index + 1
+        
+        block_msg = "{} =>> block id : {}".format(self.test_test_index,hex(block_id-ASLR))
+        isnts_msg = self.block_get_current_insts_msg(block_id)   
+        reg_msg = self.block_get_reg_msg()
+
+        if not (self.last_block_msg == '' and self.last_isnts_msg == '' and self.last_reg_msg == '') :
+            out_msg = "%s\n{\n\t%s\n}<%s>[%s]" % (self.last_block_msg,self.last_isnts_msg,self.append_msg,self.last_reg_msg)
+            log_t(out_msg)
+
+        self.last_block_msg = block_msg
+        self.last_isnts_msg = isnts_msg
+        self.last_reg_msg = reg_msg
+
+        # 清空 append_msg
+        self.append_msg = ''
+
+    def block_log_end_msg(self):
+        if not (self.last_block_msg == '' and self.last_isnts_msg == '' and self.last_reg_msg == '') :
+            out_msg = "%s\n{\n\t%s\n}<%s>[%s]" % (self.last_block_msg,self.last_isnts_msg,self.append_msg,self.last_reg_msg)
+            log_t(out_msg)
+
+        self.last_block_msg = ''
+        self.last_isnts_msg = ''
+        self.last_reg_msg = ''
+        
+        self.append_msg = ''
+        
+
+    def block_get_symbol_name(self):
+        target: lldb.SBTarget = self.debugger.GetSelectedTarget()
+        process: lldb.SBProcess = target.GetProcess()
+        thread: lldb.SBThread = process.GetSelectedThread()
+        frame: lldb.SBFrame = thread.GetSelectedFrame()
+        symbol :lldb.SBSymbol = frame.GetSymbol()
+        return symbol.GetName()
+
+
+    def block_print_tracing_progress(self,count):
+        # 当前trace的总行数 内存地址:文件地址: <函数名>
+        global ASLR
+        file_addr = 0
+        cur_pc = self.get_current_pc()
+        if  cur_pc == 0 :
+            log_c('{: <10}  err .'.format(count))
+        else:
+            file_addr = cur_pc - ASLR
+            if cur_pc in self.current_instruction_list:   
+                out_str = '{: <10}  {} : {} <{}>'.format(count,hex(cur_pc),hex(file_addr),self.block_get_symbol_name())
+                log_c(out_str)
+            else:
+                out_str = '{: <10} {}'.format(count,hex(cur_pc))
+                log_c(out_str)
+
+    def block_get_block_id(self,block):
+        retaddr = 0
+        for addr in block.keys():
+            if retaddr == 0 :
+                retaddr = addr
+            else:
+                if retaddr > addr :
+                    retaddr = addr
+        
+        return retaddr
+
+
+    def block_print(self):
+        print('---> block_list <---')
+        for item in self.block_list:
+            print(hex(item))
+
+        print('---> breakpoint_list <---')
+        for item in self.breakpoint_list :
+            print(hex(item))
+
+        print('--------------------------')
+
+
+
+
+def block_parser_options(command, result):
+    global options
+    command_tokens = shlex.split(command)
+    parser = TraceOptionParser(result)
+    parser.add_option("-e","--end-address",action="store",metavar="END_ADDRESS",dest="end_address",help="End addresses of trace,using to stop trace thread.More address,use ';' to split.")
+    parser.add_option("-l","--log-type",action="store",metavar="<trace/debug>",dest="log_type",default='trace',help="Set log type for this tracing. With trace type redirect trace output file. With debug type redirect trace and debug output files.Default is trace type.")
+    parser.add_option("-p","--print-tracing-progress",action="store_true",dest="print_tracing_progress",default=True,help="Print tracing progress in console.Default is True")
+    parser.add_option("-s","--suspend-threads-except-current-thread",action="store_true",dest="suspend_threads",default=True,help="Suspend threads except current thread,to clean env.Default is True")
+    
+    (options, _) = parser.parse_args(command_tokens)
+
+    return parser.exited
+
+
+def block_ini_log_file():
+    import time
+    global log_default_path,t_log_file_name,d_log_file_name
+    timeName = int(time.time())
+
+    if log_default_path.endswith('/'):
+        t_log_file_name = "{}{}{}".format(log_default_path,timeName,'blocktrace.log')
+        d_log_file_name = "{}{}{}".format(log_default_path,timeName,'blockdebug.log')
+        log_c('trace log file : {}'.format(t_log_file_name))
+        log_c('debug log file : {}'.format(d_log_file_name))
+    else:
+        t_log_file_name = "{}/{}{}".format(log_default_path,timeName,'blocktrace.log')
+        d_log_file_name = "{}/{}{}".format(log_default_path,timeName,'blockdebug.log')
+        log_c('trace log file : {}'.format(t_log_file_name))
+        log_c('debug log file : {}'.format(d_log_file_name))
+ 
+
+
+def block_check_parser_command():
+    global options
+    global t_log_file,t_log_file_name,d_log_file,d_log_file_name
+
+    if options.end_address is None :
+        print('err : plz input an address where you want to end tracing.')
+        return False
+
+    log_type_arr = ['trace','debug']
+    if not options.log_type in log_type_arr :
+        print('err : plz input -l --log-type value, use "trace" or "debug".')
+        return False
+
+    if options.log_type == 'trace':
+        print(type(t_log_file_name))
+        print(t_log_file_name)
+        t_log_file = open(t_log_file_name,'w')
+
+    if options.log_type == 'debug':
+        t_log_file = open(t_log_file_name,'w')
+        d_log_file = open(d_log_file_name,'w')
+
+    return True
+
+
+def test_block(debugger:lldb.SBDebugger):
+    
+    return False
+
+    target: lldb.SBTarget = debugger.GetSelectedTarget()
+    process: lldb.SBProcess = target.GetProcess()
+    thread: lldb.SBThread = process.GetSelectedThread()
+    frame: lldb.SBFrame = thread.GetSelectedFrame()
+    symbol :lldb.SBSymbol = frame.GetSymbol()
+    func : lldb.SBFunction = frame.GetFunction()
+
+    # out_msg = "%s\n{\n\t%s\n}<%s>[%s]" % ('block id : 0x1233333','0x12345 mov x0,1','malloc|strlen','x0:0x1234|x1:0x222222')
+
+    # print(out_msg)
+    # registerSet :lldb.SBValueList = frame.GetRegisters()
+    # regs:lldb.SBValue = registerSet.GetValueAtIndex(0)
+    # print('num is : {}'.format(regs.GetNumChildren()))
+    # for reg in regs :     
+    #     print('{} : {}'.format(reg.name,reg.value))
+    #     if reg.name == 'pc' :
+    #         break
+    # print(symbol.GetInstructions(target))
+
+    # # symbol 可执行文件里有，链接库里有
+    # # func 可执行文件里有，但是 链接库里 没有
+    # if func.IsValid() :
+    #     # insts:lldb.SBInstructionList = func.GetInstructions(target)
+    #     # inst:lldb.SBInstruction = None
+    #     # print('isnts : ')
+    #     # print(insts)
+    #     print('func : {}'.format(func))
+    #     print('func name : {}'.format(func.GetName()))  
+    # # print('symbol : {}'.format(symbol))
+    # # print('symbol DisplayName : {}'.format(symbol.GetDisplayName()))
+    # # print('symbol MangledName : {}'.format(symbol.GetMangledName()))
+    # print('symbol name : {}'.format(symbol.GetName()))
+
+
+    # for inst in insts :  
+    #     print('|{}|-----|{}|'.format(inst.GetMnemonic(target),inst.GetOperands(target)))
+    #     pass
+    cur_block_ins_list = None # 直接更新
+    blockObj = WTBlock(target,thread,frame,debugger)
+    blockObj.initEnv()
+    cur_ins = blockObj.block_update_current_ins()
+    print('cur ins : {}'.format(hex(cur_ins)))
+    if not cur_block_ins_list :
+        cur_block_ins_list = blockObj.block_update_current_block()
+
+    # if not (cur_ins in cur_block_ins_list) :
+    #     cur_block_ins_list = blockObj.block_update_current_block()
+
+    print('--> block_ins_list <---')
+    item : lldb.SBInstruction = None  
+    for _,item in cur_block_ins_list.items() :
+        print('{}      {}  {}'.format(hex(item.GetAddress().GetLoadAddress(target)),item.GetMnemonic(target),item.GetOperands(target)))
+
+
+    blockObj.block_print()
+
+def trace_block(debugger: lldb.SBDebugger, command: str, result: lldb.SBCommandReturnObject, internal_dict):
+    global options
+    if block_parser_options(command, result):
+        return
+    
+    ####################################################
+    ########################测 试########################
+    ####################################################
+    if test_block(debugger):
+            return
+    ####################################################
+
+    block_ini_log_file()
+
+
+    if not block_check_parser_command():
+        return
+    
+    wait_event = threading.Event()
+    wait_event.clear()
+    notify_event = threading.Event()
+    notify_event.clear()
+    
+    target: lldb.SBTarget = debugger.GetSelectedTarget()
+    broadcaster: lldb.SBBroadcaster = target.GetBroadcaster()
+    print("Target: {}".format(str(target)))
+    process: lldb.SBProcess = target.GetProcess()
+    print("Process: {}".format(str(process)))
+    print("Broadcaster: {}".format(str(broadcaster)))
+    if options.suspend_threads :
+        suspend_threads_escape_select_thread(process,True)
+
+    listener = lldb.SBListener("trace breakpoint listener")
+    rc = broadcaster.AddListener(listener, lldb.SBProcess.eBroadcastBitStateChanged)
+    my_thread = WTListeningThread(wait_event, notify_event,listener, process)
+    my_thread.start()
+
+    thread: lldb.SBThread = process.GetSelectedThread()
+    print("Thread: {}".format(str(thread)))
+    
+    frame: lldb.SBFrame = thread.GetSelectedFrame()
+    
+    module: lldb.SBModule = frame.GetModule()
+    if frame.GetFrameID() == 0xFFFFFFFF:
+        print("Invalid frame, has your process started?")
+        return
+    
+    blockObj = WTBlock(target,thread,frame,debugger,endAddress=options.end_address)
+    blockObj.initEnv()
+    
+    cur_block = None # 直接更新
+    blockCount = 0
+    while True :
+        # 打印进度
+        if options.print_tracing_progress :
+            if blockCount % num_for_print_progress == 0 and blockCount > 0:
+                blockObj.block_print_tracing_progress(blockCount)
+            blockCount = blockCount + 1
+        log_d("=================== Stopped at: ====================")
+        log_d("Frame: {}, symbol: {}, pc: {pc:#x}".format(str(frame), str(frame.GetSymbol()), pc=frame.GetPC()))
+        cur_ins = blockObj.block_update_current_ins()
+
+        if blockObj.block_check_current_ins_in_end_tracing_address_list(cur_ins):
+            print('end tracing....... at : {}'.format(hex(cur_ins)))
+            blockObj.block_log_end_msg()
+            log_d('end tracing....... at : {}'.format(hex(cur_ins)))
+            # blockObj.block_print()
+            break
+        
+        if (not cur_block ) or not (cur_ins in cur_block): 
+            cur_block = blockObj.block_update_current_block() # 需要在 bl 以及 jmp 目标地址，和条件jmp的下一条指令处下断点，以及 增加对应的 block 到 blockList 中
+            blockObj.block_update_block_data(cur_ins,cur_block)
+
+
+        at_bl_flag = blockObj.block_at_bl(cur_ins)
+        at_header_flag = blockObj.block_at_header(cur_ins)
+
+        if at_bl_flag and at_header_flag :
+            # 当前指令 是 bl 而且是 block 头
+            # 输出 信息
+            blockObj.block_log_msg(cur_ins)
+            blockObj.block_set_loop_flag(False)
+            # 单步进入，然后获得 symble name 和 function name
+            blockObj.block_step_into()
+            _,symbol_name = blockObj.block_get_data_about_function_and_symbol(cur_ins) 
+            blockObj.block_add_append_msg('') # blockObj.block_add_append_msg(msg) # 把信息 加入 到 
+
+        elif at_bl_flag and (not at_header_flag):
+            # 当前指令 仅仅是 bl
+            # 单步进入，然后获得 symble name 和 function name
+            blockObj.block_step_into()
+            _,symbol_name = blockObj.block_get_data_about_function_and_symbol(cur_ins)
+            blockObj.block_add_append_msg(symbol_name) # blockObj.block_add_append_msg(msg) # 把信息 加入 到 
+            
+        elif at_header_flag and (not at_bl_flag):
+            # 当前指令 仅仅是 block 头,在进来的时候，已经搞定
+            # 输出 信息
+            blockObj.block_log_msg(cur_ins)
+            blockObj.block_set_loop_flag(False)
+        else:
+            log_d('err : ins out of control.')
+            print('err : ins out of control.')
+            break
+        
+        # 10分钟 刷新一次缓存，把缓存 写入到 block list 文件中  xxxxx_block_list.txt
+        # 清空 blockObj.block_list
+
+        continue_and_wait_for_breakpoint(process,thread,my_thread,wait_event,notify_event)      
+
+    if options.suspend_threads :
+        suspend_threads_escape_select_thread(process,False)
+    my_thread.exit()
+    wait_event.set()
+    my_thread.join()
+    broadcaster.RemoveListener(listener)
+    print('Listener thread exited completing')
+    log_flush()
+
+
+
 def init_ASLR(debugger:lldb.SBDebugger):   
     global ASLR
     interpreter:lldb.SBCommandInterpreter = debugger.GetCommandInterpreter()
@@ -1075,7 +1710,14 @@ def __lldb_init_module(debugger:lldb.SBDebugger, internal_dict):
     debugger.HandleCommand('command script add -f lldbTrace.setDefaultPath setlogpath')
     debugger.HandleCommand('command script add -f lldbTrace.defaultPath logpath')
     print('WT::The "trace" python command has been installed and is ready for use.')
+
+
+
     print('WT::Default path =>>>> {}'.format(log_default_path))
     print('    use : logpath command to look up logfile default path.')
     print('    use : setlogpath <PATH> command to reset logfile default path.')
+
+    debugger.HandleCommand('command script add -f lldbTrace.trace_block trace_b')
+    print('WT::The "trace_b" python command has been installed and is ready for use.')
+
 
